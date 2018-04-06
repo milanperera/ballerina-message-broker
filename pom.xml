@@ -30,7 +30,7 @@
     <groupId>io.ballerina.messaging</groupId>
     <artifactId>broker-parent</artifactId>
     <packaging>pom</packaging>
-    <version>0.1.39-SNAPSHOT</version>
+    <version>0.1.51-SNAPSHOT</version>
     <name>Ballerina Message Broker</name>
     <description>A high performing, lightweight broker component</description>
 
@@ -390,7 +390,7 @@
     </build>
 
     <properties>
-        <broker.package.import.range.version>[4.0.0,5.0.0)</broker.package.import.range.version>
+        <broker.package.import.range.version>[0.1.42,1.0.0)</broker.package.import.range.version>
         <netty.version>4.1.17.Final</netty.version>
         <netty.import.package.range.version>(4,5]</netty.import.package.range.version>
         <slf4j.version>1.7.25</slf4j.version>
@@ -434,6 +434,8 @@
         <rabbitmq.client.version>5.1.2</rabbitmq.client.version>
         <jcommander.version>1.72</jcommander.version>
         <gson.version>2.2.4</gson.version>
+        <carbon.metrics.version.range>[2.0,3)</carbon.metrics.version.range>
+        <carbon.config.package.import.version.range>[2.0.0, 3.0.0)</carbon.config.package.import.version.range>
 
         <!-- Open tracing -->
         <open.tracing.version>0.31.0</open.tracing.version>

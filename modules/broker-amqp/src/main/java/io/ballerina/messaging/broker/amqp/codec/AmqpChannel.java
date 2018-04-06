@@ -19,11 +19,11 @@
 
 package io.ballerina.messaging.broker.amqp.codec;
 
-import io.ballerina.messaging.broker.amqp.AckData;
-import io.ballerina.messaging.broker.amqp.AmqpConsumer;
-import io.ballerina.messaging.broker.amqp.AmqpDeliverMessage;
 import io.ballerina.messaging.broker.amqp.AmqpServerConfiguration;
 import io.ballerina.messaging.broker.amqp.codec.flow.ChannelFlowManager;
+import io.ballerina.messaging.broker.amqp.consumer.AckData;
+import io.ballerina.messaging.broker.amqp.consumer.AmqpConsumer;
+import io.ballerina.messaging.broker.amqp.consumer.AmqpDeliverMessage;
 import io.ballerina.messaging.broker.amqp.metrics.AmqpMetricManager;
 import io.ballerina.messaging.broker.common.ResourceNotFoundException;
 import io.ballerina.messaging.broker.common.ValidationException;
@@ -48,6 +48,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -182,7 +183,7 @@ public class AmqpChannel {
         if (tag.isEmpty()) {
             tag = ShortString.parseString("sgen" + getNextConsumerTag());
         }
-        AmqpConsumer amqpConsumer = new AmqpConsumer(ctx, this, queueName.toString(), tag, exclusive);
+        AmqpConsumer amqpConsumer = new AmqpConsumer(ctx, broker, this, queueName.toString(), tag, exclusive);
         consumerMap.put(tag, amqpConsumer);
         broker.addConsumer(amqpConsumer);
         metricManager.incrementConsumerCount();
@@ -247,7 +248,7 @@ public class AmqpChannel {
         }
         if (ackData != null) {
             transaction.dequeue(ackData.getQueueName(), ackData.getMessage());
-            if (isNonTransactional()) {
+            if (!transaction.inTransactionBlock()) {
                 ackData = unackedMessageMap.removeMarkedAcknowledgment(deliveryTag);
                 ackData.getMessage().release();
             }
@@ -459,6 +460,14 @@ public class AmqpChannel {
     public void rollback(Xid xid) throws ValidationException, BrokerException {
         transaction.rollback(xid);
         unackedMessageMap.resetMarkedAcknowledgments();
+    }
+
+    public void forget(Xid xid) throws ValidationException {
+        transaction.forget(xid);
+    }
+
+    public void setTimeout(Xid xid, long timeout) throws ValidationException {
+        transaction.setTimeout(xid, timeout, TimeUnit.SECONDS);
     }
 
     /**

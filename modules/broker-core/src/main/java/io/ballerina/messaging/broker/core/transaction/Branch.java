@@ -27,11 +27,14 @@ import io.ballerina.messaging.broker.core.QueueHandler;
 import io.ballerina.messaging.broker.core.store.MessageStore;
 import io.ballerina.messaging.broker.core.util.MessageTracer;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledFuture;
 import javax.transaction.xa.Xid;
 
 /**
@@ -65,10 +68,31 @@ public class Branch implements EnqueueDequeueStrategy {
         FORGOTTEN,
 
         /**
+         * Branch expired
+         */
+        TIMED_OUT,
+
+        /**
          * Branch is in prepared state. Branch can only be committed or rolled back after this
          */
-        PREPARED
+        PREPARED,
+
+        /**
+         * Already prepared branch that is yet to be fully restored from persistence store.
+         */
+        PARTIAL_RESTORE,
+
+        /**
+         * Branch heuristically committed
+         */
+        HEUR_COM,
+
+        /**
+         * Branch heuristically rolled back
+         */
+        HEUR_RB;
     }
+
 
     /**
      * States of associated sessions for the branch.
@@ -82,9 +106,8 @@ public class Branch implements EnqueueDequeueStrategy {
         /**
          * The branch was suspended in a dtx.end
          */
-        SUSPENDED,
+        SUSPENDED
     }
-
     private State state;
 
     private Xid xid;
@@ -97,6 +120,8 @@ public class Branch implements EnqueueDequeueStrategy {
 
     private final Map<Integer, SessionState> associatedSessions;
 
+    private Future timeoutTaskFuture;
+
     Branch(Xid xid, MessageStore messageStore, Broker broker) {
         this.xid = xid;
         this.messageStore = messageStore;
@@ -105,6 +130,7 @@ public class Branch implements EnqueueDequeueStrategy {
         this.affectedQueueHandlers = new HashSet<>();
         this.associatedSessions = new HashMap<>();
         state = State.ACTIVE;
+        this.timeoutTaskFuture = null;
     }
 
     @Override
@@ -120,11 +146,16 @@ public class Branch implements EnqueueDequeueStrategy {
     }
 
     public void prepare() throws BrokerException {
+        state = State.PRE_PREPARE;
         messageStore.prepare(xid);
+        state = State.PREPARED;
         MessageTracer.trace(xid, MessageTracer.PREPARED);
     }
 
     public void commit(boolean onePhase) throws BrokerException {
+        if (state == State.PARTIAL_RESTORE) {
+            affectedQueueHandlers.addAll(recoverEnqueuedMessages());
+        }
         messageStore.flush(xid, onePhase);
         for (QueueHandler queueHandler: affectedQueueHandlers) {
             queueHandler.commit(xid);
@@ -139,7 +170,7 @@ public class Branch implements EnqueueDequeueStrategy {
     }
 
     public void dtxRollback() throws BrokerException {
-        messageStore.cancel(xid);
+        messageStore.remove(xid);
         rollbackQueueHandlers();
         MessageTracer.trace(xid, MessageTracer.ROLLBACK);
     }
@@ -228,5 +259,38 @@ public class Branch implements EnqueueDequeueStrategy {
 
     public void clearAssociations() {
         associatedSessions.clear();
+    }
+
+    public void setTimeoutTaskFuture(ScheduledFuture<?> future) {
+        this.timeoutTaskFuture = future;
+    }
+
+    private Set<QueueHandler> recoverEnqueuedMessages() throws BrokerException {
+        Collection<Message> messages = messageStore.recoverEnqueuedMessages(xid);
+        return broker.restoreDtxPreparedMessages(xid, messages);
+    }
+
+    /**
+     * Check whether the branch has timed out. Returns true if the transaction timed out before prepare is invoked.
+     * @return True if expired false otherwise.
+     */
+    public boolean isExpired() {
+        return Objects.nonNull(timeoutTaskFuture) && state == State.TIMED_OUT;
+    }
+
+    public Future getTimeoutTaskFuture() {
+        return timeoutTaskFuture;
+    }
+
+    void markAsRecoveryBranch() {
+        state = State.PARTIAL_RESTORE;
+    }
+
+    boolean isPrepared() {
+        return state == State.PREPARED || state == State.PARTIAL_RESTORE;
+    }
+
+    boolean isRollbackOnly () {
+        return state == State.ROLLBACK_ONLY;
     }
 }

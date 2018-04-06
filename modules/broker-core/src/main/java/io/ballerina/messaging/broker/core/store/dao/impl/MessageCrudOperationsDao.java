@@ -20,14 +20,13 @@
 package io.ballerina.messaging.broker.core.store.dao.impl;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import io.ballerina.messaging.broker.common.data.types.FieldTable;
+import io.ballerina.messaging.broker.common.BaseDao;
 import io.ballerina.messaging.broker.core.BrokerException;
 import io.ballerina.messaging.broker.core.ContentChunk;
 import io.ballerina.messaging.broker.core.Message;
 import io.ballerina.messaging.broker.core.Metadata;
 import io.ballerina.messaging.broker.core.metrics.BrokerMetricManager;
 import io.ballerina.messaging.broker.core.store.QueueDetachEventList;
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.wso2.carbon.metrics.core.Timer.Context;
 
@@ -37,8 +36,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import javax.sql.DataSource;
 
 /**
@@ -47,6 +48,11 @@ import javax.sql.DataSource;
 class MessageCrudOperationsDao extends BaseDao {
 
     private final BrokerMetricManager metricManager;
+
+    /**
+     * temp storage for messages loaded from DB when restarting the message broker.
+     */
+    private Map<Long, Message> storedMessageCache = new ConcurrentHashMap<>();
 
     MessageCrudOperationsDao(DataSource dataSource, BrokerMetricManager metricManager) {
         super(dataSource);
@@ -110,7 +116,7 @@ class MessageCrudOperationsDao extends BaseDao {
         metadataStmt.setString(2, metadata.getExchangeName());
         metadataStmt.setString(3, metadata.getRoutingKey());
         metadataStmt.setLong(4, metadata.getContentLength());
-        metadataStmt.setBytes(5, metadata.getBytes());
+        metadataStmt.setBytes(5, metadata.getPropertiesAsBytes());
         metadataStmt.addBatch();
     }
 
@@ -151,6 +157,11 @@ class MessageCrudOperationsDao extends BaseDao {
                 statement.addBatch();
             }
             statement.executeBatch();
+
+            // Remove deleted messages from the stored cache
+            for (Long internalId : internalIdList) {
+                storedMessageCache.remove(internalId);
+            }
         } catch (SQLException e) {
             throw new BrokerException("Error occurred while deleting messages", e);
         } finally {
@@ -170,9 +181,19 @@ class MessageCrudOperationsDao extends BaseDao {
             resultSet = statement.executeQuery();
             while (resultSet.next()) {
                 long messageId = resultSet.getLong(1);
-                Message message = messageList.computeIfAbsent(messageId, k -> new Message(k, null));
-                message.addAttachedDurableQueue(resultSet.getString(2));
+                Message cachedMessage = storedMessageCache.get(messageId);
+
+                if (Objects.nonNull(cachedMessage)) {
+                    if (!messageList.containsKey(messageId)) {
+                        messageList.put(messageId, cachedMessage.bareShallowCopy());
+                    }
+                } else {
+                    Message message = messageList.computeIfAbsent(messageId, k -> new Message(k, null));
+                    message.addAttachedDurableQueue(resultSet.getString(2));
+                }
             }
+
+            storedMessageCache.putAll(messageList);
             return messageList.values();
         } catch (SQLException e) {
             throw new BrokerException("Error occurred while reading messages", e);
@@ -182,7 +203,7 @@ class MessageCrudOperationsDao extends BaseDao {
         }
     }
 
-    public Collection<Message> read(Connection connection, Map<Long, Message> messageMap) throws BrokerException {
+    public void read(Connection connection, Map<Long, List<Message>> messageMap) throws BrokerException {
 
         try (Context ignored = metricManager.startMessageReadTimer()) {
             if (!messageMap.isEmpty()) {
@@ -190,26 +211,15 @@ class MessageCrudOperationsDao extends BaseDao {
                 populateMessageWithMetadata(connection, idList, messageMap.keySet(), messageMap);
                 populateContent(connection, idList, messageMap);
             }
-            return messageMap.values();
         } catch (SQLException e) {
             throw new BrokerException("Error occurred while reading messages", e);
         }
     }
 
-    private String getSQLFormattedIdList(int size) {
-        StringBuilder paramList = new StringBuilder();
-        paramList.append("?");
-
-        for (int i = 1; i < size; i++) {
-            paramList.append(",?");
-        }
-        return paramList.toString();
-    }
-
     @SuppressFBWarnings("SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING")
     private void populateMessageWithMetadata(Connection connection,
                                              String idListAsString, Collection<Long> idList,
-                                             Map<Long, Message> messageMap) throws SQLException, BrokerException {
+                                             Map<Long, List<Message>> messageMap) throws SQLException, BrokerException {
         String metadataSql = "SELECT MESSAGE_ID, EXCHANGE_NAME, ROUTING_KEY, CONTENT_LENGTH, MESSAGE_METADATA "
                 + " FROM MB_METADATA WHERE MESSAGE_ID IN (" + idListAsString + ") ORDER BY MESSAGE_ID";
 
@@ -231,23 +241,17 @@ class MessageCrudOperationsDao extends BaseDao {
                 String routingKey = metadataResultSet.getString(3);
                 long contentLength = metadataResultSet.getLong(4);
                 byte[] bytes = metadataResultSet.getBytes(5);
-                ByteBuf buffer = Unpooled.wrappedBuffer(bytes);
                 try {
-                    Metadata metadata = new Metadata(routingKey, exchangeName, contentLength);
-                    metadata.setProperties(FieldTable.parse(buffer));
-                    metadata.setHeaders(FieldTable.parse(buffer));
+                    Metadata metadata = new Metadata(routingKey, exchangeName, contentLength, bytes);
 
-                    Message message = messageMap.get(messageId);
-                    if (Objects.nonNull(message)) {
-                        message.setMetadata(metadata);
-                    } else {
-                        message = new Message(messageId, metadata);
-                        messageMap.put(messageId, message);
+                    List<Message> messages = messageMap.get(messageId);
+                    for (Message message : messages) {
+                        if (Objects.nonNull(message)) {
+                            message.setMetadata(metadata);
+                        }
                     }
                 } catch (Exception e) {
                     throw new BrokerException("Error occurred while parsing metadata properties", e);
-                } finally {
-                    buffer.release();
                 }
             }
         } finally {
@@ -258,7 +262,7 @@ class MessageCrudOperationsDao extends BaseDao {
 
     @SuppressFBWarnings("SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING")
     private void populateContent(Connection connection, String idList,
-                                 Map<Long, Message> messageMap) throws SQLException {
+                                 Map<Long, List<Message>> messageMap) throws SQLException {
 
         PreparedStatement selectContent = null;
         ResultSet contentResultSet = null;
@@ -280,9 +284,11 @@ class MessageCrudOperationsDao extends BaseDao {
                 int offset = contentResultSet.getInt(2);
                 byte[] bytes = contentResultSet.getBytes(3);
 
-                Message message = messageMap.get(messageId);
-                if (message != null) {
-                    message.addChunk(new ContentChunk(offset, Unpooled.copiedBuffer(bytes)));
+                List<Message> messages = messageMap.get(messageId);
+                for (Message message : messages) {
+                    if (Objects.nonNull(message)) {
+                        message.addChunk(new ContentChunk(offset, Unpooled.wrappedBuffer(bytes)));
+                    }
                 }
             }
         } finally {

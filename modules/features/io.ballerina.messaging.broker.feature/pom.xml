@@ -21,7 +21,7 @@
     <parent>
         <artifactId>broker-feature</artifactId>
         <groupId>io.ballerina.messaging</groupId>
-        <version>0.1.39-SNAPSHOT</version>
+        <version>0.1.51-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -33,11 +33,11 @@
     <dependencies>
         <dependency>
             <groupId>io.ballerina.messaging</groupId>
-            <artifactId>broker-amqp</artifactId>
+            <artifactId>broker-core</artifactId>
         </dependency>
         <dependency>
             <groupId>io.ballerina.messaging</groupId>
-            <artifactId>broker-core</artifactId>
+            <artifactId>broker-amqp</artifactId>
         </dependency>
         <dependency>
             <groupId>io.ballerina.messaging</groupId>
@@ -52,12 +52,20 @@
             <artifactId>broker-rest-runner</artifactId>
         </dependency>
         <dependency>
+            <groupId>io.ballerina.messaging</groupId>
+            <artifactId>broker-auth</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
         </dependency>
         <dependency>
             <groupId>org.wso2.orbit.com.lmax</groupId>
             <artifactId>disruptor</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.ballerina.messaging</groupId>
+            <artifactId>broker-metrics</artifactId>
         </dependency>
     </dependencies>
     <build>
@@ -87,7 +95,11 @@
                             </adviceFileContents>
                             <bundles>
                                 <bundle>
-                                    <symbolicName>broker-rest-runner</symbolicName>
+                                    <symbolicName>broker-amqp</symbolicName>
+                                    <version>${project.version}</version>
+                                </bundle>
+                                <bundle>
+                                    <symbolicName>broker-auth</symbolicName>
                                     <version>${project.version}</version>
                                 </bundle>
                                 <bundle>
@@ -95,7 +107,7 @@
                                     <version>${project.version}</version>
                                 </bundle>
                                 <bundle>
-                                    <symbolicName>broker-amqp</symbolicName>
+                                    <symbolicName>broker-coordination</symbolicName>
                                     <version>${project.version}</version>
                                 </bundle>
                                 <bundle>
@@ -103,7 +115,11 @@
                                     <version>${project.version}</version>
                                 </bundle>
                                 <bundle>
-                                    <symbolicName>broker-coordination</symbolicName>
+                                    <symbolicName>broker-metrics</symbolicName>
+                                    <version>${project.version}</version>
+                                </bundle>
+                                <bundle>
+                                    <symbolicName>broker-rest-runner</symbolicName>
                                     <version>${project.version}</version>
                                 </bundle>
                                 <bundle>
