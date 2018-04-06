@@ -120,5 +120,6 @@ $JAVACMD \
     -Dlog4j.configuration="file:$MESSAGE_BROKER_HOME/conf/log4j.properties" \
     -Dbroker.config="$MESSAGE_BROKER_HOME/conf/broker.yaml" \
     -Dbroker.users.config="$MESSAGE_BROKER_HOME/conf/security/users.yaml" \
+    -Dbroker.trace.config="$MESSAGE_BROKER_HOME/conf/trace-config.yaml" \
     -Dtransports.netty.conf="$MESSAGE_BROKER_HOME/conf/admin-service-transports.yaml" \
     io.ballerina.messaging.broker.Main

@@ -27,6 +27,7 @@ Please follow the steps below to build message broker from source code.
 │   ├── admin-service-transports.yaml
 │   ├── broker.yaml
 │   └── log4j.properties
+│   └── trace-config.yaml
 ├── lib
 ├── database
 ├── dbscripts
@@ -45,6 +46,7 @@ Please follow the steps below to build message broker from source code.
 - **bin/broker-admin.sh** - executable used to start message brokers cli client
 - **conf/admin-service-transports.yaml** - admin rest service related configuration file
 - **conf/broker.yaml** - main configuration file
+- **conf/trace-config.yaml** - open tracing configuration file
 - **conf/log4j.properties** - logging configuration file
 - **lib** - contains all the required jars
 - **database** - contains files related to the embedded H2 database

@@ -25,7 +25,11 @@ import io.ballerina.messaging.broker.common.util.function.ThrowingConsumer;
 import io.ballerina.messaging.broker.core.metrics.BrokerMetricManager;
 import io.ballerina.messaging.broker.core.queue.MemQueueImpl;
 import io.ballerina.messaging.broker.core.queue.UnmodifiableQueueWrapper;
+import io.ballerina.messaging.broker.core.trace.BrokerTracingManager;
+import io.ballerina.messaging.broker.core.trace.Tracer;
 import io.ballerina.messaging.broker.core.util.MessageTracer;
+
+import io.ballerina.messaging.broker.observe.trace.ReferenceType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,13 +60,15 @@ public final class QueueHandler {
      */
     private final BrokerMetricManager metricManager;
 
+    private final BrokerTracingManager tracingManager;
+
     private final Set<Consumer> consumers;
 
     private final Queue unmodifiableQueueView;
 
     private final Map<Binding, ThrowingConsumer<Binding, BrokerException>> bindingChangeListenersMap;
 
-    QueueHandler(Queue queue, BrokerMetricManager metricManager) {
+    QueueHandler(Queue queue, BrokerMetricManager metricManager, BrokerTracingManager tracingManager) {
         this.queue = queue;
         queue.setQueueHandler(this);
         unmodifiableQueueView = new UnmodifiableQueueWrapper(queue);
@@ -75,6 +81,7 @@ public final class QueueHandler {
         this.consumers = ConcurrentHashMap.newKeySet();
         consumerIterator = new CyclicConsumerIterator();
         bindingChangeListenersMap = new ConcurrentHashMap<>();
+        this.tracingManager = tracingManager;
     }
 
     public Queue getQueue() {
@@ -119,17 +126,39 @@ public final class QueueHandler {
      * @param message {@link Message}
      */
     void enqueue(Message message) throws BrokerException {
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Enqueuing message {} to queue {}", message, queue.getName());
-        }
-        boolean success = queue.enqueue(message);
-        if (success) {
-            metricManager.addInMemoryMessage();
-            MessageTracer.trace(message, this, MessageTracer.PUBLISH_SUCCESSFUL);
-        } else {
-            message.release();
-            MessageTracer.trace(message, this, MessageTracer.PUBLISH_FAILURE);
-            LOGGER.info("Failed to publish message {} to the queue {}", message, queue.getName());
+        Tracer tracer = new Tracer.TracerBuilder().
+                serviceName("QueueHandler").
+                spanName("enqueue").
+                referenceType(ReferenceType.CHILDOF).
+                parentSpanId(tracingManager.getParentSpan()).
+                build();
+
+        String enqueueSpan = tracingManager.startSpan(tracer);
+        try {
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Enqueuing message {} to queue {}", message, queue.getName());
+            }
+
+            tracingManager.addTag(enqueueSpan, "message.id", String.valueOf(message.getInternalId()));
+            tracingManager.addTag(enqueueSpan, "message.queue", getQueue().getName());
+            tracingManager.addTag(enqueueSpan, "message.exchange", message.getMetadata().getExchangeName());
+            tracingManager.addTag(enqueueSpan, "message.redelivery.count", message.getRedeliveryCount());
+            tracingManager.addTag(enqueueSpan, "message.is.delivered", message.isRedelivered());
+            boolean success = queue.enqueue(message);
+            if (success) {
+                metricManager.addInMemoryMessage();
+                MessageTracer.trace(message, this, MessageTracer.PUBLISH_SUCCESSFUL);
+                tracingManager.addLog(enqueueSpan, "message", MessageTracer.PUBLISH_SUCCESSFUL);
+            } else {
+                message.release();
+                MessageTracer.trace(message, this, MessageTracer.PUBLISH_FAILURE);
+                tracingManager.addLog(enqueueSpan, "message", MessageTracer.PUBLISH_FAILURE);
+                LOGGER.info("Failed to publish message {} to the queue {}", message, queue.getName());
+            }
+        } finally {
+            tracingManager.stopSpan(enqueueSpan);
+            //stopping parent span here
+            tracingManager.stopSpan(tracingManager.getParentSpan());
         }
     }
 
@@ -280,4 +309,5 @@ public final class QueueHandler {
                                                   + " active consumer(s)");
         }
     }
+
 }

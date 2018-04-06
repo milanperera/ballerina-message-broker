@@ -22,6 +22,7 @@ package io.ballerina.messaging.broker.core;
 import io.ballerina.messaging.broker.core.configuration.BrokerCoreConfiguration;
 import io.ballerina.messaging.broker.core.metrics.BrokerMetricManager;
 import io.ballerina.messaging.broker.core.queue.MemQueueImpl;
+import io.ballerina.messaging.broker.core.trace.BrokerTracingManager;
 
 
 /**
@@ -30,11 +31,14 @@ import io.ballerina.messaging.broker.core.queue.MemQueueImpl;
 public class MemBackedQueueHandlerFactory implements QueueHandlerFactory {
     private final BrokerMetricManager metricManager;
     private final int nonDurableQueueMaxDepth;
+    private final BrokerTracingManager tracingManager;
 
     public MemBackedQueueHandlerFactory(BrokerMetricManager metricManager,
-                                        BrokerCoreConfiguration configuration) {
+                                        BrokerCoreConfiguration configuration,
+                                        BrokerTracingManager tracingManager) {
         this.metricManager = metricManager;
         this.nonDurableQueueMaxDepth = Integer.parseInt(configuration.getNonDurableQueueMaxDepth());
+        this.tracingManager = tracingManager;
     }
 
     @Override
@@ -49,6 +53,6 @@ public class MemBackedQueueHandlerFactory implements QueueHandlerFactory {
 
     private QueueHandler getQueueHandler(String queueName, boolean durable, boolean autoDelete) {
         Queue queue = new MemQueueImpl(queueName, durable, nonDurableQueueMaxDepth, autoDelete);
-        return new QueueHandler(queue, metricManager);
+        return new QueueHandler(queue, metricManager, tracingManager);
     }
 }

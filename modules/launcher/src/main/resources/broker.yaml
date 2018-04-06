@@ -176,3 +176,7 @@ wso2.metrics:
      # Polling Period in seconds.
      # This is the period for polling metrics from the metric registry and logging to the configured logger
      pollingPeriod: 60
+
+ballerina.broker.trace:
+
+ enabled: true

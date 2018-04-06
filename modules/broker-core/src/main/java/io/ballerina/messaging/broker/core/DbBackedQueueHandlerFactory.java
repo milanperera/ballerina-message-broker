@@ -25,6 +25,7 @@ import io.ballerina.messaging.broker.core.queue.DbBackedQueueImpl;
 import io.ballerina.messaging.broker.core.queue.MemQueueImpl;
 import io.ballerina.messaging.broker.core.queue.QueueBufferFactory;
 import io.ballerina.messaging.broker.core.store.DbMessageStore;
+import io.ballerina.messaging.broker.core.trace.BrokerTracingManager;
 
 /**
  * DB backed factory for creating queue handler objects.
@@ -34,13 +35,15 @@ public class DbBackedQueueHandlerFactory implements QueueHandlerFactory {
     private final BrokerMetricManager metricManager;
     private final int nonDurableQueueMaxDepth;
     private QueueBufferFactory queueBufferFactory;
+    private final BrokerTracingManager tracingManager;
 
     public DbBackedQueueHandlerFactory(DbMessageStore dbMessageStore, BrokerMetricManager metricManager,
-                                       BrokerCoreConfiguration configuration) {
+                                       BrokerCoreConfiguration configuration, BrokerTracingManager tracingManager) {
         this.dbMessageStore = dbMessageStore;
         this.metricManager = metricManager;
         nonDurableQueueMaxDepth = Integer.parseInt(configuration.getNonDurableQueueMaxDepth());
         queueBufferFactory = new QueueBufferFactory(configuration);
+        this.tracingManager = tracingManager;
     }
 
     /**
@@ -53,7 +56,7 @@ public class DbBackedQueueHandlerFactory implements QueueHandlerFactory {
      */
     public QueueHandler createDurableQueueHandler(String queueName, boolean autoDelete) throws BrokerException {
         Queue queue = new DbBackedQueueImpl(queueName, autoDelete, dbMessageStore, queueBufferFactory);
-        return new QueueHandler(queue, metricManager);
+        return new QueueHandler(queue, metricManager, tracingManager);
     }
 
     /**
@@ -65,7 +68,7 @@ public class DbBackedQueueHandlerFactory implements QueueHandlerFactory {
      */
     public QueueHandler createNonDurableQueueHandler(String queueName, boolean autoDelete) {
         Queue queue = new MemQueueImpl(queueName, nonDurableQueueMaxDepth, autoDelete);
-        return new QueueHandler(queue, metricManager);
+        return new QueueHandler(queue, metricManager, tracingManager);
     }
 
 }

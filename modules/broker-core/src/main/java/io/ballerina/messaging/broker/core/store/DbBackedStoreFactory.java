@@ -26,6 +26,7 @@ import io.ballerina.messaging.broker.core.QueueRegistry;
 import io.ballerina.messaging.broker.core.configuration.BrokerCoreConfiguration;
 import io.ballerina.messaging.broker.core.metrics.BrokerMetricManager;
 import io.ballerina.messaging.broker.core.store.dao.impl.DaoFactory;
+import io.ballerina.messaging.broker.core.trace.BrokerTracingManager;
 
 import javax.sql.DataSource;
 
@@ -37,16 +38,19 @@ public class DbBackedStoreFactory implements StoreFactory {
     private final DaoFactory daoFactory;
     private final BrokerMetricManager metricManager;
     private final BrokerCoreConfiguration configuration;
+    private final BrokerTracingManager tracingManager;
 
     private DbMessageStore dbMessageStore;
 
     public DbBackedStoreFactory(DataSource dataSource,
                                 BrokerMetricManager metricManager,
-                                BrokerCoreConfiguration configuration) {
+                                BrokerCoreConfiguration configuration,
+                                BrokerTracingManager tracingManager) {
         daoFactory = new DaoFactory(dataSource, metricManager);
         this.metricManager = metricManager;
         this.configuration = configuration;
         dbMessageStore = new DbMessageStore(daoFactory.createMessageDao(), 32768, 1024);
+        this.tracingManager = tracingManager;
     }
 
     @Override
@@ -62,6 +66,7 @@ public class DbBackedStoreFactory implements StoreFactory {
     @Override
     public QueueRegistry getQueueRegistry() throws BrokerException {
         return new QueueRegistry(daoFactory.createQueueDao(),
-                                 new DbBackedQueueHandlerFactory(dbMessageStore, metricManager, configuration));
+                                 new DbBackedQueueHandlerFactory(dbMessageStore, metricManager,
+                                         configuration, tracingManager));
     }
 }

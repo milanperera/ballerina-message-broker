@@ -39,6 +39,7 @@
                 <include>log4j.properties</include>
                 <include>broker.yaml</include>
                 <include>admin-service-transports.yaml</include>
+                <include>trace-config.yaml</include>
             </includes>
             <fileMode>644</fileMode>
         </fileSet>
@@ -96,6 +97,7 @@
                 <include>io.ballerina.messaging:broker-coordination:jar</include>
                 <include>io.ballerina.messaging:broker-cli-client:jar</include>
                 <include>io.ballerina.messaging:broker-launcher:jar</include>
+                <include>io.ballerina.messaging:broker-observe:jar</include>
             </includes>
             <outputDirectory>lib</outputDirectory>
             <useProjectArtifact>true</useProjectArtifact>

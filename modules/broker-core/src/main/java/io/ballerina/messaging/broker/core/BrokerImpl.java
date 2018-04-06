@@ -43,9 +43,17 @@ import io.ballerina.messaging.broker.core.store.MemBackedStoreFactory;
 import io.ballerina.messaging.broker.core.store.MessageStore;
 import io.ballerina.messaging.broker.core.store.StoreFactory;
 import io.ballerina.messaging.broker.core.task.TaskExecutorService;
+import io.ballerina.messaging.broker.core.trace.BrokerTracingManager;
+import io.ballerina.messaging.broker.core.trace.DefaultBrokerTracingManager;
+import io.ballerina.messaging.broker.core.trace.NoOpBrokerTracingManager;
+import io.ballerina.messaging.broker.core.trace.Tracer;
 import io.ballerina.messaging.broker.core.transaction.BrokerTransaction;
 import io.ballerina.messaging.broker.core.transaction.BrokerTransactionFactory;
 import io.ballerina.messaging.broker.core.util.MessageTracer;
+import io.ballerina.messaging.broker.observe.trace.ReferenceType;
+import io.ballerina.messaging.broker.observe.trace.config.BrokerTracingConfiguration;
+import io.ballerina.messaging.broker.observe.trace.config.OpenTracingConfiguration;
+import io.ballerina.messaging.broker.observe.trace.config.TracersLoader;
 import io.ballerina.messaging.broker.rest.BrokerServiceRunner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,6 +101,8 @@ public final class BrokerImpl implements Broker {
 
     private BrokerHelper brokerHelper;
 
+    private BrokerTracingManager tracingManager;
+
     private final BrokerTransactionFactory brokerTransactionFactory;
 
     private final QueueRegistry queueRegistry;
@@ -112,6 +122,8 @@ public final class BrokerImpl implements Broker {
         BrokerConfigProvider configProvider = startupContext.getService(BrokerConfigProvider.class);
         BrokerCoreConfiguration configuration = configProvider.getConfigurationObject(BrokerCoreConfiguration.NAMESPACE,
                                                                                       BrokerCoreConfiguration.class);
+        initTracing(configProvider);
+
         StoreFactory storeFactory = getStoreFactory(startupContext, configProvider, configuration);
 
         exchangeRegistry = storeFactory.getExchangeRegistry();
@@ -128,7 +140,6 @@ public final class BrokerImpl implements Broker {
         startupContext.registerService(Broker.class, this);
         initRestApi(startupContext);
         initHaSupport(startupContext);
-
     }
 
     private StoreFactory getStoreFactory(StartupContext startupContext,
@@ -145,9 +156,9 @@ public final class BrokerImpl implements Broker {
         DataSource dataSource = startupContext.getService(DataSource.class);
 
         if (commonConfigs.getEnableInMemoryMode()) {
-            return new MemBackedStoreFactory(metricManager, configuration);
+            return new MemBackedStoreFactory(metricManager, configuration, tracingManager);
         } else {
-            return new DbBackedStoreFactory(dataSource, metricManager, configuration);
+            return new DbBackedStoreFactory(dataSource, metricManager, configuration, tracingManager);
         }
     }
 
@@ -187,6 +198,18 @@ public final class BrokerImpl implements Broker {
                 FieldTable.EMPTY_TABLE);
     }
 
+    private void initTracing(BrokerConfigProvider configProvider) throws Exception {
+        BrokerTracingConfiguration brokerTracingConfiguration =
+                configProvider.getConfigurationObject(BrokerTracingConfiguration.NAMESPACE,
+                        BrokerTracingConfiguration.class);
+        OpenTracingConfiguration openTracingConfiguration = TracersLoader.load();
+        if (brokerTracingConfiguration.isEnabled() && openTracingConfiguration != null) {
+            tracingManager = new DefaultBrokerTracingManager(openTracingConfiguration);
+        } else {
+            tracingManager = new NoOpBrokerTracingManager();
+        }
+    }
+
     private BrokerMetricManager getMetricManager(MetricService metrics) {
         if (Objects.nonNull(metrics)) {
             return new DefaultBrokerMetricManager(metrics);
@@ -205,10 +228,23 @@ public final class BrokerImpl implements Broker {
 
     @Override
     public void publish(Message message) throws BrokerException {
+        Tracer tracer = new Tracer.TracerBuilder().
+                serviceName("Broker").
+                spanName("publish").
+                referenceType(ReferenceType.ROOT).
+                build();
+        String parentSpan = tracingManager.startSpan(tracer);
+
         lock.readLock().lock();
         try {
+            tracingManager.setParentSpan(parentSpan);
+            tracingManager.addTag(parentSpan, "message.id", String.valueOf(message.getInternalId()));
+            tracingManager.addLog(parentSpan, "message", "Publishing message");
+
             Metadata metadata = message.getMetadata();
             Exchange exchange = exchangeRegistry.getExchange(metadata.getExchangeName());
+            tracingManager.addTag(parentSpan, "message.queue", metadata.getRoutingKey());
+            tracingManager.addTag(parentSpan, "message.exchange", metadata.getExchangeName());
             if (exchange != null) {
                 String routingKey = metadata.getRoutingKey();
                 BindingSet bindingSet = exchange.getBindingsForRoute(routingKey);

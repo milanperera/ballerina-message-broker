@@ -28,6 +28,7 @@ import io.ballerina.messaging.broker.core.metrics.BrokerMetricManager;
 import io.ballerina.messaging.broker.core.store.dao.impl.NullBindingDao;
 import io.ballerina.messaging.broker.core.store.dao.impl.NullExchangeDao;
 import io.ballerina.messaging.broker.core.store.dao.impl.NullQueueDao;
+import io.ballerina.messaging.broker.core.trace.BrokerTracingManager;
 
 /**
  * Memory backed store used when broker is operating in in-memory mode.
@@ -35,6 +36,7 @@ import io.ballerina.messaging.broker.core.store.dao.impl.NullQueueDao;
 public class MemBackedStoreFactory implements StoreFactory {
     private final BrokerMetricManager metricManager;
     private final BrokerCoreConfiguration configuration;
+    private final BrokerTracingManager tracingManager;
 
     /**
      * Null object used to represent the database access layer in in-memory mode.
@@ -42,9 +44,11 @@ public class MemBackedStoreFactory implements StoreFactory {
     private NullMessageStore messageStore = new NullMessageStore();
 
     public MemBackedStoreFactory(BrokerMetricManager metricManager,
-                                 BrokerCoreConfiguration configuration) {
+                                 BrokerCoreConfiguration configuration,
+                                 BrokerTracingManager tracingManager) {
         this.metricManager = metricManager;
         this.configuration = configuration;
+        this.tracingManager = tracingManager;
     }
 
     @Override
@@ -59,6 +63,7 @@ public class MemBackedStoreFactory implements StoreFactory {
 
     @Override
     public QueueRegistry getQueueRegistry() throws BrokerException {
-        return new QueueRegistry(new NullQueueDao(), new MemBackedQueueHandlerFactory(metricManager, configuration));
+        return new QueueRegistry(new NullQueueDao(),
+                new MemBackedQueueHandlerFactory(metricManager, configuration, tracingManager));
     }
 }
