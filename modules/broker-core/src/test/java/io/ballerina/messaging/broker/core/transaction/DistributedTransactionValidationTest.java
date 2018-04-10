@@ -26,6 +26,7 @@ import io.ballerina.messaging.broker.core.metrics.NullBrokerMetricManager;
 import io.ballerina.messaging.broker.core.store.MemBackedStoreFactory;
 import io.ballerina.messaging.broker.core.store.NullMessageStore;
 import io.ballerina.messaging.broker.core.store.StoreFactory;
+import io.ballerina.messaging.broker.core.trace.NoOpBrokerTracingManager;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
@@ -84,7 +85,8 @@ public class DistributedTransactionValidationTest {
            expectedExceptionsMessageRegExp = "Xid .* cannot be started as it is already known")
     public void testStartWithAlreadyKnownXidWithoutJoinOrResume()  throws Exception {
         StoreFactory storeFactory = new MemBackedStoreFactory(new NullBrokerMetricManager(),
-                                                              new BrokerCoreConfiguration());
+                new BrokerCoreConfiguration(),
+                new NoOpBrokerTracingManager());
         Branch branch = new Branch(xid, storeFactory.getMessageStore(), null);
         transactionRegistry.register(branch);
 
@@ -120,7 +122,8 @@ public class DistributedTransactionValidationTest {
            expectedExceptionsMessageRegExp = "Branch is set to rollback only. Can't commit with xid .*")
     public void testCommitWithRollbackOnlyBranch() throws Exception {
         StoreFactory storeFactory = new MemBackedStoreFactory(new NullBrokerMetricManager(),
-                                                              new BrokerCoreConfiguration());
+                new BrokerCoreConfiguration(),
+                new NoOpBrokerTracingManager());
         Branch branch = new Branch(xid, storeFactory.getMessageStore(), null);
         transactionRegistry.register(branch);
         branch.setState(Branch.State.ROLLBACK_ONLY);

@@ -121,26 +121,6 @@ public class OpenTracerManager {
     }
 
     /**
-     * Method to activate given span.
-     *
-     * @param serviceName the service name
-     * @param spanId the id of the span to finish
-     */
-    public void activateSpan(String serviceName, String spanId) {
-        if (enabled) {
-            Map<String, Tracer> tracers = tracerStore.getTracers(serviceName);
-            Map<String, Span> spanMap = spanStore.getSpan(spanId);
-
-            if (spanMap != null) {
-                spanMap.forEach((tracerName, span) -> {
-                    Tracer tracer = tracers.get(tracerName);
-                    tracer.scopeManager().activate(span, false);
-                });
-            }
-        }
-    }
-
-    /**
      * Method to mark a span as finished.
      *
      * @param spanId the id of the span to finish

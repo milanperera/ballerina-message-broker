@@ -41,6 +41,13 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.transaction.xa.Xid;
 
+import static io.ballerina.messaging.broker.core.trace.Constants.Log.MESSAGE;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.MESSAGE_EXCHANGE;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.MESSAGE_ID;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.MESSAGE_IS_DELIVERED;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.MESSAGE_QUEUE;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.MESSAGE_REDELIVERY_COUNT;
+
 /**
  * Represents the queue of the broker. Contains a bounded queue to store messages. Subscriptions for the queue are
  * maintained as an in-memory set.
@@ -88,6 +95,10 @@ public final class QueueHandler {
         return unmodifiableQueueView;
     }
 
+    public BrokerTracingManager getTracingManager() {
+        return tracingManager;
+    }
+
     /**
      * Retrieve all the current consumers for the queue.
      *
@@ -130,7 +141,7 @@ public final class QueueHandler {
                 serviceName("QueueHandler").
                 spanName("enqueue").
                 referenceType(ReferenceType.CHILDOF).
-                parentSpanId(tracingManager.getParentSpan()).
+                parentSpanId(message.getParentSpan()).
                 build();
 
         String enqueueSpan = tracingManager.startSpan(tracer);
@@ -139,37 +150,53 @@ public final class QueueHandler {
                 LOGGER.debug("Enqueuing message {} to queue {}", message, queue.getName());
             }
 
-            tracingManager.addTag(enqueueSpan, "message.id", String.valueOf(message.getInternalId()));
-            tracingManager.addTag(enqueueSpan, "message.queue", getQueue().getName());
-            tracingManager.addTag(enqueueSpan, "message.exchange", message.getMetadata().getExchangeName());
-            tracingManager.addTag(enqueueSpan, "message.redelivery.count", message.getRedeliveryCount());
-            tracingManager.addTag(enqueueSpan, "message.is.delivered", message.isRedelivered());
+            tracingManager.addTag(enqueueSpan, MESSAGE_ID, String.valueOf(message.getInternalId()));
+            tracingManager.addTag(enqueueSpan, MESSAGE_QUEUE, getQueue().getName());
+            tracingManager.addTag(enqueueSpan, MESSAGE_EXCHANGE, message.getMetadata().getExchangeName());
+            tracingManager.addTag(enqueueSpan, MESSAGE_REDELIVERY_COUNT, message.getRedeliveryCount());
+            tracingManager.addTag(enqueueSpan, MESSAGE_IS_DELIVERED, message.isRedelivered());
             boolean success = queue.enqueue(message);
             if (success) {
                 metricManager.addInMemoryMessage();
                 MessageTracer.trace(message, this, MessageTracer.PUBLISH_SUCCESSFUL);
-                tracingManager.addLog(enqueueSpan, "message", MessageTracer.PUBLISH_SUCCESSFUL);
+                tracingManager.addLog(enqueueSpan, MESSAGE, MessageTracer.PUBLISH_SUCCESSFUL);
             } else {
                 message.release();
                 MessageTracer.trace(message, this, MessageTracer.PUBLISH_FAILURE);
-                tracingManager.addLog(enqueueSpan, "message", MessageTracer.PUBLISH_FAILURE);
+                tracingManager.addLog(enqueueSpan, MESSAGE, MessageTracer.PUBLISH_FAILURE);
                 LOGGER.info("Failed to publish message {} to the queue {}", message, queue.getName());
             }
         } finally {
             tracingManager.stopSpan(enqueueSpan);
-            //stopping parent span here
-            tracingManager.stopSpan(tracingManager.getParentSpan());
         }
     }
 
     void prepareForEnqueue(Xid xid, Message message) throws BrokerException {
+        Tracer tracer = new Tracer.TracerBuilder().
+                serviceName("QueueHandler").
+                spanName("prepareForEnqueue").
+                referenceType(ReferenceType.CHILDOF).
+                parentSpanId(message.getParentSpan()).
+                build();
         MessageTracer.trace(message, xid, this, MessageTracer.PREPARE_ENQUEUE);
+        String span = tracingManager.startSpan(tracer);
+        tracingManager.addLog(span, MESSAGE, MessageTracer.PREPARE_ENQUEUE);
         queue.prepareEnqueue(xid, message);
+        tracingManager.stopSpan(span);
     }
 
     void prepareForDetach(Xid xid, Message message) throws BrokerException {
+        Tracer tracer = new Tracer.TracerBuilder().
+                serviceName("QueueHandler").
+                spanName("prepareForDetach").
+                referenceType(ReferenceType.CHILDOF).
+                parentSpanId(message.getParentSpan()).
+                build();
         MessageTracer.trace(message, xid, this, MessageTracer.PREPARE_DEQUEUE);
+        String span = tracingManager.startSpan(tracer);
+        tracingManager.addLog(span, MESSAGE, MessageTracer.PREPARE_DEQUEUE);
         queue.prepareDetach(xid, message);
+        tracingManager.stopSpan(span);
     }
 
     public void commit(Xid xid) {
@@ -191,11 +218,14 @@ public final class QueueHandler {
         Message message = redeliveryQueue.dequeue();
         if (message == null) {
             message = queue.dequeue();
-            MessageTracer.trace(message, this, MessageTracer.RETRIEVE_FOR_DELIVERY);
+            if (message != null) {
+                //tracingManager.addLog(message.getParentSpan(), "message", MessageTracer.RETRIEVE_FOR_DELIVERY);
+                MessageTracer.trace(message, this, MessageTracer.RETRIEVE_FOR_DELIVERY);
+            }
         } else {
+            //tracingManager.addLog(message.getParentSpan(), "message", MessageTracer.RETRIEVE_FOR_REDELIVERY);
             MessageTracer.trace(message, this, MessageTracer.RETRIEVE_FOR_REDELIVERY);
         }
-
         return message;
     }
 
@@ -207,12 +237,29 @@ public final class QueueHandler {
      * @throws BrokerException throws on failure to dequeue the message.
      */
     void dequeue(Message message) throws BrokerException {
+        Tracer tracer = new Tracer.TracerBuilder().
+                serviceName("QueueHandler").
+                spanName("dequeue").
+                referenceType(ReferenceType.CHILDOF).
+                parentSpanId(message.getParentSpan()).
+                build();
+        String span = tracingManager.startSpan(tracer);
         queue.detach(message);
         metricManager.removeInMemoryMessage();
         MessageTracer.trace(message, this, MessageTracer.ACKNOWLEDGE);
+        tracingManager.addLog(span, MESSAGE, MessageTracer.ACKNOWLEDGE);
+        tracingManager.stopSpan(span);
+        tracingManager.stopSpan(message.getParentSpan());
     }
 
     public void requeue(Message message) throws BrokerException {
+        Tracer tracer = new Tracer.TracerBuilder().
+                serviceName("QueueHandler").
+                spanName("requeue").
+                referenceType(ReferenceType.CHILDOF).
+                parentSpanId(message.getParentSpan()).
+                build();
+        String span = tracingManager.startSpan(tracer);
         boolean success = redeliveryQueue.enqueue(message);
         if (!success) {
             LOGGER.warn("Enqueuing message since redelivery queue for {} is full. message:{}",
@@ -221,6 +268,8 @@ public final class QueueHandler {
             enqueue(message);
         }
         MessageTracer.trace(message, this, MessageTracer.REQUEUE);
+        tracingManager.addLog(span, MESSAGE, MessageTracer.REQUEUE);
+        tracingManager.stopSpan(span);
     }
 
     /**

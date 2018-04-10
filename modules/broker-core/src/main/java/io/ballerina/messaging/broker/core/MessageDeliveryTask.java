@@ -20,9 +20,18 @@
 package io.ballerina.messaging.broker.core;
 
 import io.ballerina.messaging.broker.core.task.Task;
+import io.ballerina.messaging.broker.core.trace.BrokerTracingManager;
+import io.ballerina.messaging.broker.core.trace.Tracer;
 import io.ballerina.messaging.broker.core.util.MessageTracer;
+import io.ballerina.messaging.broker.observe.trace.ReferenceType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static io.ballerina.messaging.broker.core.trace.Constants.Log.MESSAGE;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.CONSUMER;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.CONSUMER_ID;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.MESSAGE_EXCHANGE;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.MESSAGE_QUEUE;
 
 /**
  * Delivers messages to consumers for a given queueHandler.
@@ -33,8 +42,11 @@ final class MessageDeliveryTask extends Task {
 
     private final QueueHandler queueHandler;
 
+    private final BrokerTracingManager tracingManager;
+
     MessageDeliveryTask(QueueHandler queueHandler) {
         this.queueHandler = queueHandler;
+        this.tracingManager = queueHandler.getTracingManager();
     }
 
     @Override
@@ -81,8 +93,21 @@ final class MessageDeliveryTask extends Task {
                 // TODO: handle send errors
                 Message message = queueHandler.takeForDelivery();
                 if (message != null) {
+                    Tracer tracerSend = new Tracer.TracerBuilder().
+                            serviceName("Consumer").
+                            spanName("send").
+                            referenceType(ReferenceType.ROOT).
+                            build();
+
+                    String parentSpan = tracingManager.startSpan(tracerSend);
                     LOGGER.debug("Sending message {} to {}", message, consumer);
                     MessageTracer.trace(message, queueHandler, MessageTracer.DELIVER);
+                    tracingManager.addLog(parentSpan, MESSAGE, MessageTracer.DELIVER);
+                    tracingManager.addTag(parentSpan, MESSAGE_QUEUE, message.getMetadata().getRoutingKey());
+                    tracingManager.addTag(parentSpan, MESSAGE_EXCHANGE, message.getMetadata().getExchangeName());
+                    tracingManager.addTag(parentSpan, CONSUMER_ID, consumer.getId());
+                    tracingManager.addTag(parentSpan, CONSUMER, consumer.toString());
+                    message.setParentSpan(parentSpan);
                     consumer.send(message);
                     deliveredCount++;
                     // TODO: make the value configurable
@@ -94,7 +119,6 @@ final class MessageDeliveryTask extends Task {
                     break;
                 }
             }
-
             previousConsumer = consumer;
         }
         if (deliveredCount > 0) {

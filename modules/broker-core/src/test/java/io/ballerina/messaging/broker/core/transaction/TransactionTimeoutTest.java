@@ -25,6 +25,7 @@ import io.ballerina.messaging.broker.core.metrics.NullBrokerMetricManager;
 import io.ballerina.messaging.broker.core.store.MemBackedStoreFactory;
 import io.ballerina.messaging.broker.core.store.NullMessageStore;
 import io.ballerina.messaging.broker.core.store.StoreFactory;
+import io.ballerina.messaging.broker.core.trace.NoOpBrokerTracingManager;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
@@ -56,7 +57,8 @@ public class TransactionTimeoutTest {
         Registry transactionRegistry = new Registry(branchFactory);
         transaction = new DistributedTransaction(branchFactory, transactionRegistry);
         StoreFactory storeFactory = new MemBackedStoreFactory(new NullBrokerMetricManager(),
-                                                              new BrokerCoreConfiguration());
+                new BrokerCoreConfiguration(),
+                new NoOpBrokerTracingManager());
         branch = new Branch(xid, storeFactory.getMessageStore(), null);
         transactionRegistry.register(branch);
     }

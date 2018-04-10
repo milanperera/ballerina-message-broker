@@ -45,7 +45,7 @@ public class Tracer {
         this.referenceType = referenceType;
     }
 
-    private void setParentSpanId(String parentSpanId) {
+    public void setParentSpanId(String parentSpanId) {
         this.parentSpanId = parentSpanId;
     }
 

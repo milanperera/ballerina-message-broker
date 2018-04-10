@@ -34,8 +34,4 @@ public interface BrokerTracingManager {
     void addTag(String spanId, String key, Number value);
 
     void addTag(String spanId, String key, boolean value);
-
-    void setParentSpan(String parentSpan);
-
-    String getParentSpan();
 }

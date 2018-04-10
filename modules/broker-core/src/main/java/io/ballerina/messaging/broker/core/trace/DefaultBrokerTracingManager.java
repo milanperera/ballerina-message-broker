@@ -20,9 +20,11 @@ package io.ballerina.messaging.broker.core.trace;
 
 import io.ballerina.messaging.broker.observe.trace.OpenTracerManager;
 import io.ballerina.messaging.broker.observe.trace.config.OpenTracingConfiguration;
+import io.ballerina.messaging.broker.observe.trace.config.TracerConfig;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Default implementation of {@link BrokerTracingManager}
@@ -31,18 +33,12 @@ public class DefaultBrokerTracingManager implements BrokerTracingManager {
 
     private final OpenTracerManager manager;
 
-    private String parentSpan;
-
-    public String getParentSpan() {
-        return parentSpan;
-    }
-
-    public void setParentSpan(String parentSpan) {
-        this.parentSpan = parentSpan;
-    }
-
     public DefaultBrokerTracingManager(OpenTracingConfiguration configuration) {
         manager = new OpenTracerManager(configuration);
+    }
+
+    public DefaultBrokerTracingManager(Set<TracerConfig> tracers) {
+        manager = new OpenTracerManager(tracers);
     }
 
     @Override

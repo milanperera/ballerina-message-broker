@@ -18,6 +18,8 @@
 
 package io.ballerina.messaging.broker.observe.trace.config;
 
+import java.util.Set;
+
 /**
  * This class represents the configurations related to tracing.
  */
@@ -26,6 +28,15 @@ public class BrokerTracingConfiguration {
     public static final String NAMESPACE = "ballerina.broker.trace";
 
     private boolean enabled = false;
+    private Set<TracerConfig> tracers;
+
+    public Set<TracerConfig> getTracers() {
+        return tracers;
+    }
+
+    public void setTracers(Set<TracerConfig> tracers) {
+        this.tracers = tracers;
+    }
 
     public boolean isEnabled() {
         return enabled;

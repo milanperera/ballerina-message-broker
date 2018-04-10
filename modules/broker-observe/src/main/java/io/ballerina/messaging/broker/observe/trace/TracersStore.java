@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 
 /**
@@ -87,9 +88,9 @@ public class TracersStore {
     private static class TracerGenerator {
         String name;
         OpenTracer tracer;
-        Map<String, String> properties;
+        Properties properties;
 
-        TracerGenerator(String name, OpenTracer tracer, Map<String, String> properties) {
+        TracerGenerator(String name, OpenTracer tracer, Properties properties) {
             this.name = name;
             this.tracer = tracer;
             this.properties = properties;

@@ -52,12 +52,4 @@ public class NoOpBrokerTracingManager implements BrokerTracingManager {
     public void addTag(String spanId, String key, boolean value) {
 
     }
-
-    public String getParentSpan() {
-        return null;
-    }
-
-    public void setParentSpan(String parentSpan) {
-
-    }
 }

@@ -43,6 +43,8 @@ public class Message {
 
     private final Set<String> queueSet;
 
+    private String parentSpan;
+
     /**
      * Unique id of the message.
      */
@@ -81,6 +83,7 @@ public class Message {
         Message message = new Message(internalId, metadata.shallowCopy(), queueSet);
         message.redelivered = redelivered;
         message.redeliveryCount = redeliveryCount;
+        message.parentSpan = parentSpan;
         shallowCopyContent(message);
         return message;
     }
@@ -165,5 +168,13 @@ public class Message {
         metadata = null;
         release();
         contentChunks.clear();
+    }
+
+    public String getParentSpan() {
+        return parentSpan;
+    }
+
+    public void setParentSpan(String spanId) {
+        parentSpan = spanId;
     }
 }

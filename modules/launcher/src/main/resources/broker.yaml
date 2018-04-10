@@ -180,3 +180,15 @@ wso2.metrics:
 ballerina.broker.trace:
 
  enabled: true
+ tracers:
+   - name: jaeger
+     enabled: true
+     className: io.ballerina.messaging.broker.observe.trace.extension.jaeger.OpenTracingExtension
+     configuration:
+       sampler.type: const
+       sampler.param: 1
+       reporter.log.spans: true
+       reporter.hostname: localhost
+       reporter.port: 5775
+       reporter.flush.interval.ms: 1000
+       reporter.max.buffer.spans: 1000

@@ -70,6 +70,13 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.sql.DataSource;
 import javax.transaction.xa.Xid;
 
+import static io.ballerina.messaging.broker.core.trace.Constants.Log.ERROR;
+import static io.ballerina.messaging.broker.core.trace.Constants.Log.ERROR_KIND;
+import static io.ballerina.messaging.broker.core.trace.Constants.Log.MESSAGE;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.MESSAGE_EXCHANGE;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.MESSAGE_ID;
+import static io.ballerina.messaging.broker.core.trace.Constants.Tag.MESSAGE_QUEUE;
+
 /**
  * Broker APIs not protected by authorization.
  */
@@ -204,8 +211,8 @@ public final class BrokerImpl implements Broker {
                 configProvider.getConfigurationObject(BrokerTracingConfiguration.NAMESPACE,
                         BrokerTracingConfiguration.class);
         OpenTracingConfiguration openTracingConfiguration = TracersLoader.load();
-        if (brokerTracingConfiguration.isEnabled() && openTracingConfiguration != null) {
-            tracingManager = new DefaultBrokerTracingManager(openTracingConfiguration);
+        if (openTracingConfiguration != null && brokerTracingConfiguration.isEnabled()) {
+            tracingManager = new DefaultBrokerTracingManager(brokerTracingConfiguration.getTracers());
         } else {
             tracingManager = new NoOpBrokerTracingManager();
         }
@@ -230,7 +237,7 @@ public final class BrokerImpl implements Broker {
     @Override
     public void publish(Message message) throws BrokerException {
         Tracer tracer = new Tracer.TracerBuilder().
-                serviceName("Broker").
+                serviceName("Producer").
                 spanName("publish").
                 referenceType(ReferenceType.ROOT).
                 build();
@@ -238,14 +245,14 @@ public final class BrokerImpl implements Broker {
 
         lock.readLock().lock();
         try {
-            tracingManager.setParentSpan(parentSpan);
-            tracingManager.addTag(parentSpan, "message.id", String.valueOf(message.getInternalId()));
-            tracingManager.addLog(parentSpan, "message", "Publishing message");
+            message.setParentSpan(parentSpan);
+            tracingManager.addTag(parentSpan, MESSAGE_ID, String.valueOf(message.getInternalId()));
+            tracingManager.addLog(parentSpan, MESSAGE, "Publishing message");
 
             Metadata metadata = message.getMetadata();
             Exchange exchange = exchangeRegistry.getExchange(metadata.getExchangeName());
-            tracingManager.addTag(parentSpan, "message.queue", metadata.getRoutingKey());
-            tracingManager.addTag(parentSpan, "message.exchange", metadata.getExchangeName());
+            tracingManager.addTag(parentSpan, MESSAGE_QUEUE, metadata.getRoutingKey());
+            tracingManager.addTag(parentSpan, MESSAGE_EXCHANGE, metadata.getExchangeName());
             if (exchange != null) {
                 String routingKey = metadata.getRoutingKey();
                 BindingSet bindingSet = exchange.getBindingsForRoute(routingKey);
@@ -254,6 +261,8 @@ public final class BrokerImpl implements Broker {
                     LOGGER.info("Dropping message since no queues found for routing key {} in {}",
                             routingKey, exchange);
                     MessageTracer.trace(message, MessageTracer.NO_ROUTES);
+                    tracingManager.addLog(parentSpan, ERROR_KIND, MessageTracer.NO_ROUTES);
+                    tracingManager.stopSpan(parentSpan);
                 } else {
                     try {
                         messageStore.add(message.shallowCopy());
@@ -265,12 +274,16 @@ public final class BrokerImpl implements Broker {
                 }
             } else {
                 MessageTracer.trace(message, MessageTracer.UNKNOWN_EXCHANGE);
+                tracingManager.addTag(parentSpan, ERROR, true);
+                tracingManager.addLog(parentSpan, ERROR_KIND, MessageTracer.UNKNOWN_EXCHANGE);
+                tracingManager.stopSpan(parentSpan);
                 throw new BrokerException("Message publish failed. Unknown exchange: " + metadata.getExchangeName());
             }
         } finally {
             lock.readLock().unlock();
             // Release the original message. Shallow copies are distributed
             message.release();
+            tracingManager.stopSpan(parentSpan);
         }
 
     }
@@ -295,6 +308,8 @@ public final class BrokerImpl implements Broker {
             LOGGER.info("Dropping message since message didn't have any routes to {}",
                     message.getMetadata().getRoutingKey());
             MessageTracer.trace(message, MessageTracer.NO_ROUTES);
+            String parentSpan = message.getParentSpan();
+            tracingManager.addLog(parentSpan, ERROR_KIND, MessageTracer.NO_ROUTES);
             return;
         }
 
@@ -318,15 +333,24 @@ public final class BrokerImpl implements Broker {
 
     @Override
     public Set<QueueHandler> enqueue(Xid xid, Message message) throws BrokerException {
+        Tracer tracer = new Tracer.TracerBuilder().
+                serviceName("Producer").
+                spanName("enqueue").
+                referenceType(ReferenceType.ROOT).
+                build();
+        String parentSpan = tracingManager.startSpan(tracer);
         lock.readLock().lock();
         try {
             Metadata metadata = message.getMetadata();
+            message.setParentSpan(parentSpan);
             Exchange exchange = exchangeRegistry.getExchange(metadata.getExchangeName());
             if (Objects.nonNull(exchange)) {
                 BindingSet bindingsForRoute = exchange.getBindingsForRoute(metadata.getRoutingKey());
                 Set<QueueHandler> uniqueQueueHandlers = getUniqueQueueHandlersForBinding(metadata, bindingsForRoute);
                 if (uniqueQueueHandlers.isEmpty()) {
                     MessageTracer.trace(message, xid, MessageTracer.NO_ROUTES);
+                    tracingManager.addLog(parentSpan, ERROR_KIND, MessageTracer.NO_ROUTES);
+                    tracingManager.addTag(parentSpan, ERROR, true);
                     return uniqueQueueHandlers;
                 }
                 messageStore.add(xid, message.shallowCopy());
@@ -336,10 +360,13 @@ public final class BrokerImpl implements Broker {
                 return uniqueQueueHandlers;
             } else {
                 MessageTracer.trace(message, xid, MessageTracer.UNKNOWN_EXCHANGE);
+                tracingManager.addLog(parentSpan, ERROR_KIND, MessageTracer.UNKNOWN_EXCHANGE);
+                tracingManager.addTag(parentSpan, ERROR, true);
                 throw new BrokerException("Message published to unknown exchange " + metadata.getExchangeName());
             }
         } finally {
             lock.readLock().unlock();
+            tracingManager.stopSpan(parentSpan);
             message.release();
         }
     }

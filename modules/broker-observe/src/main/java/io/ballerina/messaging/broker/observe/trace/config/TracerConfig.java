@@ -18,7 +18,7 @@
 
 package io.ballerina.messaging.broker.observe.trace.config;
 
-import java.util.Map;
+import java.util.Properties;
 
 /**
  * Represents the configuration related to tracer
@@ -28,7 +28,7 @@ public class TracerConfig {
     private String name;
     private boolean enabled;
     private String className;
-    private Map<String, String> configuration;
+    private Properties configuration;
 
     public String getName() {
         return name;
@@ -54,11 +54,11 @@ public class TracerConfig {
         this.className = className;
     }
 
-    public Map<String, String> getConfiguration() {
+    public Properties getConfiguration() {
         return configuration;
     }
 
-    public void setConfiguration(Map<String, String> configuration) {
+    public void setConfiguration(Properties configuration) {
         this.configuration = configuration;
     }
 }

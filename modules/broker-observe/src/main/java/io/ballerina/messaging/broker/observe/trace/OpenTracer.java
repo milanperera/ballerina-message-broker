@@ -19,7 +19,7 @@ package io.ballerina.messaging.broker.observe.trace;
 
 import io.opentracing.Tracer;
 
-import java.util.Map;
+import java.util.Properties;
 
 /**
  * This represents the Java SPI interface that OpenTracerManager will be using
@@ -36,13 +36,6 @@ public interface OpenTracer {
      * @return Specific {@link Tracer} instance throws {@link InvalidConfigurationException}
      * if the configuration or tracer name is invalid.
      */
-    Tracer getTracer(String tracerName, Map<String, String> configProperties, String serviceName)
+    Tracer getTracer(String tracerName, Properties configProperties, String serviceName)
             throws InvalidConfigurationException;
-
-    /**
-     * Returns the name of the tracer. This will be used when loading the tracer by name.
-     *
-     * @return tracer name.
-     */
-    String getName();
 }
